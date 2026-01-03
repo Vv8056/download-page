@@ -209,42 +209,70 @@
       let EXPECTED_SHA = null;
 
       /* ================= LOAD RELEASE FROM GITHUB ================= */
-      async function loadLatestRelease(){
+      async function loadLatestRelease() {
         try {
-          const res = await fetch(GITHUB_RELEASES_API);
+          const res = await fetch(GITHUB_RELEASES_API, {
+            headers: {
+              'Accept': 'application/json'
+            }
+          });
 
-          if (!res.ok) {
-            const err = await res.json();
-            throw new Error(err.message);
-          }
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
 
-          const releases = await res.json();
-          const release = releases[0];
-          const asset = release.assets.find(a => a.name.endsWith('.apk'));
+        const data = await res.json();
 
-          if (!asset) throw new Error('APK asset not found');
+        // ✅ Handle wrapped response: { releases: [...] }
+        if (!data || !Array.isArray(data.releases) || data.releases.length === 0) {
+          throw new Error('No releases available');
+        }
 
-          APK_URL = asset.browser_download_url;
-          EXPECTED_SHA = asset.digest?.replace('sha256:', '') || null;
+        const release = data.releases[0];
 
-          /* ===== Populate UI ===== */
-          // el('version').textContent = `Version ${release.tag_name}`;
-          el(`name`).textContent = `${release.name}`;
-          el('version').textContent = `Version: ${release.name}`;
-          el('size').textContent = `Size: ${formatBytes(asset.size)}`;
-          el('directLink').href = APK_URL;
+        if (!Array.isArray(release.assets) || release.assets.length === 0) {
+          throw new Error('No assets found in release');
+        }
 
-          if (EXPECTED_SHA) {
-            el('sha').textContent = EXPECTED_SHA;
-          }
+        // Prefer APK explicitly
+        const asset = release.assets.find(
+        a =>
+          a.content_type === 'application/vnd.android.package-archive' ||
+          a.name.endsWith('.apk')
+        );
 
-        } catch (err) {
-          console.error('Release load failed:', err);
+        if (!asset) {
+          throw new Error('APK asset not found');
+        }
+
+        // ===== Store globals =====
+        APK_URL = asset.browser_download_url;
+        EXPECTED_SHA = asset.digest
+          ? asset.digest.replace(/^sha256:/, '')
+          : null;
+
+        // ===== Populate UI =====
+        el('name').textContent = release.name || 'Unnamed Release';
+        el('version').textContent = `Version: ${release.tag_name}`;
+        el('size').textContent = `Size: ${formatBytes(asset.size)}`;
+        el('directLink').href = APK_URL;
+
+        if (EXPECTED_SHA) {
+          el('sha').textContent = EXPECTED_SHA;
+        } else {
+          el('sha').textContent = '(not provided)';
+        }
+
+      } catch (err) {
+        // console.error('Release load failed:', err);
+
+          el('name').textContent = 'Unavailable';
           el('version').textContent = 'Release unavailable';
+          el('size').textContent = '—';
+          el('sha').textContent = '—';
           el('directLink').href = 'https://github.com/Vv8056/vidflow/releases';
         }
       }
-
       loadLatestRelease();
 
       /* ================= DOWNLOAD LOGIC ================= */
@@ -357,3 +385,4 @@
     </script>
   </body>
 </html>
+
